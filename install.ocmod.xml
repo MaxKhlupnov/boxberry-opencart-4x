@@ -1,0 +1,586 @@
+<modification>
+    <id>Boxberry</id>
+    <code>Boxberry</code>
+    <name>Boxberry shipping</name>
+    <author><![CDATA[Boxberry]]></author>
+    <link><![CDATA[https://boxberry.ru/e-commerce/it-resenia/modul-dla-cms-opencart]]></link>
+    <version>1.6.10</version>
+    <file path="admin/controller/sale/order.php">
+        <operation>
+            <search><![CDATA[
+            // Vouchers
+            ]]></search>
+            <add position="before"><![CDATA[
+        // Delivery
+            $data['delivery'] = array();
+            if (in_array($data['shipping_code'], array('boxberry.pickup', 'boxberry.pickup_prepaid'))) {
+                $this->load->model('boxberry/delivery');
+                $delivery = $this->model_boxberry_delivery->getDelivery($data['order_id']);
+                $products = $this->model_boxberry_delivery->getProducts($data['order_id']);
+                $total = 0;
+                foreach ($products as $product) {
+                    $total += $product['total'];
+                }
+                if (isset($products[0])&&($product = $products[0])) {
+                    if ((count($products) > 1) || ((count($products) == 1) && ($product['quantity'] > 1))) {
+                        $product['width'] = 0;
+                        $product['height'] = 0;
+                        $product['length'] = 0;
+                    }
+                    else {
+                        $product['width'] > 0 ? $product['width'] = $this->length->convert($product['width'], $product['length_class_id'],
+                            $this->config->get('shipping_boxberry_length_class_id')) : $product['width'] = $this->config->get('shipping_boxberry_width');
+                        $product['height'] > 0 ?  $product['height'] = $this->length->convert($product['height'], $product['length_class_id'],
+                            $this->config->get('shipping_boxberry_length_class_id')) : $product['height'] = $this->config->get('shipping_boxberry_height');
+                        $product['length'] > 0 ? $product['length'] = $this->length->convert($product['length'], $product['length_class_id'],
+                            $this->config->get('shipping_boxberry_length_class_id')) : $product['length'] = $this->config->get('shipping_boxberry_depth');
+                    }
+                    $weight = 0;
+                    foreach ($products as $prod_item) {
+                        if ($prod_item['shipping']) {
+                            $prod_item['weight'] > 0 ? $weight += $this->weight->convert($prod_item['weight'] * $prod_item['quantity'],
+                                $prod_item['weight_class_id'], $this->config->get('shipping_boxberry_weight_class_id'))
+                                : $weight += $this->config->get('shipping_boxberry_weight') * $prod_item['quantity'];
+                        }
+                    }
+
+                    $data['shipping_boxberry_widget_key'] = $this->config->get('shipping_boxberry_widget_key');
+                    $data['delivery'] = array(
+                        'class' => $data['shipping_code'] === 'boxberry.pickup' ? 'boxberryDeliverySelf' : 'boxberryDeliverySelfPrepaid',
+                        'city' => $product['shipping_city'].' '.$product['shipping_zone'],
+                        'weight' => $weight,
+                        'width' => $product['width'],
+                        'height' => $product['height'],
+                        'length' => $product['length'],
+                        'ordersum' => $this->currency->convert($total, $this->config->get('config_currency'), 'RUB'),
+                        'order_id' => $data['order_id'],
+                        'address' => $data['shipping_address_1'],
+                        'delivery' => $delivery,
+ 						'api_url' => $this->config->get('shipping_boxberry_api_url'),
+ 						'widget_url' => $this->config->get('shipping_boxberry_widget_url')
+                    );
+                }
+            }
+            ]]></add>
+        </operation>
+    </file>
+    <file path="admin/view/template/sale/order_form.twig">
+        <operation>
+            <search><![CDATA[
+            // Currency
+            ]]></search>
+            <add position="before"><![CDATA[
+//Delivery
+
+  document.addEventListener('click', function (e) {
+      if (e.target && (e.target instanceof HTMLElement) && e.target.getAttribute('data-boxberry-open') == 'true') {
+          e.preventDefault();
+          var selectPointLink = e.target;
+          (function (selectedPointLink) {
+              var city = selectPointLink.getAttribute('data-boxberry-city');
+              var token = selectPointLink.getAttribute('data-boxberry-token');
+              var weight = selectPointLink.getAttribute('data-boxberry-weight');
+              var width = selectPointLink.getAttribute('data-boxberry-width');
+              var height = selectPointLink.getAttribute('data-boxberry-height');
+              var depth = selectPointLink.getAttribute('data-boxberry-length');
+              var paymentSum = selectPointLink.getAttribute('data-paymentsum');
+              var orderSum = selectPointLink.getAttribute('data-ordersum');
+			  var api = selectPointLink.getAttribute('data-api-url');
+
+              if (selectPointLink.getAttribute('data-class') == 'boxberryDeliverySelf') {
+                  paymentSum = orderSum;
+              } else {
+                  paymentSum = 0;
+              }
+              var boxberryPointSelectedHandler = function (result) { console.log(result);
+                  result.order_id = selectPointLink.getAttribute('data-order-id');
+                  $(selectPointLink).html(result.address);
+                  $('#input-shipping-address-2').val('# '+result.id);
+                  $('#input-shipping-address-1').val(result.address);
+                  $('#input-shipping-city').val(result.name);
+                  $('#input-shipping-postcode').val(result.zip);
+              };
+			  boxberry.versionAPI(api);
+              boxberry.open(boxberryPointSelectedHandler, token, city, 0, orderSum, weight, paymentSum,
+                  height, width, depth);
+          })(selectPointLink);
+      }
+  }, true);
+            ]]></add>
+        </operation>
+        <operation>
+            <search><![CDATA[
+            <input type="text" name="address_2" value="{{ shipping_address_2 }}" id="input-shipping-address-2" class="form-control" />
+            ]]></search>
+            <add position="after"><![CDATA[
+{% if delivery %}
+			<script type="text/javascript" src="{{ delivery.widget_url }}"></script>
+                  <a id="boxberry-issue_point-link" href="#"
+                     data-boxberry-open="true"
+                     data-class="{{ delivery.class }}"
+                     data-boxberry-token="{{ shipping_boxberry_widget_key }}"
+                     data-boxberry-city="{{ delivery.city }}"
+                     data-boxberry-weight="{{ delivery.weight }}"
+                     data-boxberry-width="{{ delivery.width }}"
+                     data-boxberry-height="{{ delivery.height }}"
+                     data-boxberry-length="{{ delivery.length }}"
+                     data-ordersum="{{ delivery.ordersum }}"
+                     data-order-id="{{ delivery.order_id }}"
+					data-api-url="{{ delivery.api_url }}"
+                  >{% if shipping_address_2 %} {{ shipping_address_1 }} {% else %} Выбрать ПВЗ на карте {% endif %}</a>
+                  {% endif %}
+            ]]></add>
+        </operation>
+    </file>
+    <file path="admin/view/template/sale/order_form.tpl">
+        <operation>
+            <search><![CDATA[
+            // Currency
+            ]]></search>
+            <add position="before"><![CDATA[
+//Delivery
+
+  document.addEventListener('click', function (e) {
+      if (e.target && (e.target instanceof HTMLElement) && e.target.getAttribute('data-boxberry-open') == 'true') {
+          e.preventDefault();
+          var selectPointLink = e.target;
+          (function (selectedPointLink) {
+              var city = selectPointLink.getAttribute('data-boxberry-city');
+              var token = selectPointLink.getAttribute('data-boxberry-token');
+              var weight = selectPointLink.getAttribute('data-boxberry-weight');
+              var width = selectPointLink.getAttribute('data-boxberry-width');
+              var height = selectPointLink.getAttribute('data-boxberry-height');
+              var depth = selectPointLink.getAttribute('data-boxberry-length');
+              var paymentSum = selectPointLink.getAttribute('data-paymentsum');
+              var orderSum = selectPointLink.getAttribute('data-ordersum');
+			  var api = selectPointLink.getAttribute('data-api-url');
+
+              if (selectPointLink.getAttribute('data-class') == 'boxberryDeliverySelf') {
+                  paymentSum = orderSum;
+              } else {
+                  paymentSum = 0;
+              }
+              var boxberryPointSelectedHandler = function (result) { console.log(result);
+                  result.order_id = selectPointLink.getAttribute('data-order-id');
+                  $(selectPointLink).html(result.address);
+                  $('#input-shipping-address-2').val('# '+result.id);
+                  $('#input-shipping-address-1').val(result.address);
+                  $('#input-shipping-city').val(result.name);
+                  $('#input-shipping-postcode').val(result.zip);
+              };
+			  boxberry.versionAPI(api);
+              boxberry.open(boxberryPointSelectedHandler, token, city, 0, orderSum, weight, paymentSum,
+                  height, width, depth);
+          })(selectPointLink);
+      }
+  }, true);
+            ]]></add>
+        </operation>
+        <operation>
+            <search><![CDATA[
+
+            <input type="text" name="address_2" value="<?php echo $payment_address_2; ?>" id="input-payment-address-2" class="form-control" />
+            ]]></search>
+            <add position="after"><![CDATA[
+                  <?php if($delivery) : ?>
+                  <script type="text/javascript" src="<?php echo $delivery['widget_url']; ?>"></script>
+                  <a id="boxberry-issue_point-link" href="#"
+                     data-boxberry-open="true"
+                     data-class="<?php echo $delivery['class'] ?>"
+                     data-boxberry-token="<?php echo $shipping_boxberry_widget_key ?>"
+                     data-boxberry-city="<?php echo $delivery['city'] ?>"
+                     data-boxberry-weight="<?php echo $delivery['weight']; ?>"
+                     data-boxberry-width="<?php echo $delivery['width'] ?>"
+                     data-boxberry-height="<?php echo $delivery['height']; ?>"
+                     data-boxberry-length="<?php echo $delivery['length']; ?>"
+                     data-ordersum="<?php echo $delivery['ordersum'] ?>"
+                     data-order-id="<?php echo $delivery['order_id'] ?>"
+                     data-api-url="<?php echo $delivery['api_url'] ?>"
+                  ><?php if ($shipping_address_2) : ?> <?php echo $shipping_address_1; ?> <?php else :?> Выбрать ПВЗ на карте <?php endif; ?></a>
+                  <?php endif; ?>
+           ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/model/checkout/order.php">
+        <operation>
+            <search><![CDATA[
+            public function addOrder($data) {
+            ]]></search>
+            <add position="after"><![CDATA[
+        // Boxberry shipping address modify START
+
+        $integrationInstalled = false;
+        $shippingMethod = '';
+        if (isset($this->session->data['shipping_method']['code'])) {
+            $shippingMethod = explode('.', $this->session->data['shipping_method']['code']);
+            if (!empty($shippingMethod[1]) && $shippingMethod[0] === 'boxberry') {
+                $query = $this->db->query("SHOW TABLES LIKE '" . DB_PREFIX . "boxberry_deliveries'");
+                $integrationInstalled = $query->rows;
+                if ($shippingMethod[1] === 'pickup' || $shippingMethod[1] === 'pickup_prepaid') {
+                    $data['shipping_address_1'] = (isset($this->session->data['boxberry_shipping_addr1']) ? $this->session->data['boxberry_shipping_addr1'] : '');
+                    $data['shipping_address_2'] = (isset($this->session->data['boxberry_shipping_addr2']) ? $this->session->data['boxberry_shipping_addr2'] : '');
+                    if ($integrationInstalled !== false) {
+                        if (isset($this->session->data['boxberry_shipping_issue_point_id_prepaid'])) {
+                            $data['shipping_address_2'] = '# ' . $this->session->data['boxberry_shipping_issue_point_id_prepaid'];
+                        } elseif (isset($this->session->data['boxberry_shipping_issue_point_id'])) {
+                            $data['shipping_address_2'] = '# ' . $this->session->data['boxberry_shipping_issue_point_id'];
+                        }
+                    }
+                }
+            }
+        }
+
+        // Boxberry shipping address modify END
+            ]]></add>
+        </operation>
+    </file>
+    <file path="admin/controller/common/column_left.php">
+        <operation>
+            <search><![CDATA[
+            $sale = array();
+            ]]></search>
+            <add position="after"><![CDATA[
+        if ($this->user->hasPermission('access', 'sale/boxberry')) {
+				$sale[] = array(
+					'name'	   => $this->language->get('text_delivery'),
+					'href'     => $this->url->link('sale/boxberry',  (strpos(VERSION, '2.') === 0 ? 'token' : 'user_token') . '=' . $this->session->data[(strpos(VERSION, '2.') === 0 ? 'token' : 'user_token')], true),
+					'children' => array()
+				);
+			}
+            ]]></add>
+        </operation>
+    </file>
+    <file path="admin/language/{ru-ru,en-gb}/common/column_left.php">
+        <operation>
+            <search><![CDATA[$_['text_order']]]></search>
+            <add position="before"><![CDATA[
+            $_['text_delivery']             = 'Boxberry';
+            ]]></add>
+        </operation>
+    </file>
+    <file path="system/library/cart/cart.php">
+        <operation>
+            <search><![CDATA[$this->weight = $registry->get('weight');]]></search>
+            <add position="after"><![CDATA[
+            $this->length = $registry->get('length');
+            ]]></add>
+        </operation>
+        <operation>
+            <search><![CDATA[
+					'weight'          => ($product_query->row['weight'] + $option_weight) * $cart['quantity'],
+            ]]></search>
+            <add position="replace"><![CDATA[
+                    'weight'          => ($weight + $option_weight) * $cart['quantity'],
+            ]]></add>
+        </operation>
+        <operation>
+            <search><![CDATA[
+					'width'           => $product_query->row['width'],
+            ]]></search>
+            <add position="replace"><![CDATA[
+                    'width'          => $width,
+            ]]></add>
+        </operation>
+        <operation>
+            <search><![CDATA[
+					'height'          => $product_query->row['height'],
+            ]]></search>
+            <add position="replace"><![CDATA[
+                    'height'          => $height,
+            ]]></add>
+        </operation>
+        <operation>
+            <search><![CDATA[
+					'length'          => $product_query->row['length'],
+            ]]></search>
+            <add position="replace"><![CDATA[
+                    'length'          => $length,
+            ]]></add>
+        </operation>
+        <operation>
+            <search><![CDATA[
+					$product_data[] = array(
+            ]]></search>
+            <add position="before"><![CDATA[
+$weight = $product_query->row['weight'];
+if ($weight <= 0) {
+	$weight = $this->weight->convert($this->config->get('shipping_boxberry_weight'), $this->config->get('shipping_boxberry_weight_class_id'), $product_query->row['weight_class_id']);
+}
+$width = $product_query->row['width'];
+if ($width <= 0) {
+	$width = $this->length->convert($this->config->get('shipping_boxberry_width'), $this->config->get('shipping_boxberry_length_class_id'), $product_query->row['length_class_id']);
+}
+$height = $product_query->row['height'];
+if ($height <= 0) {
+	$height = $this->length->convert($this->config->get('shipping_boxberry_height'), $this->config->get('shipping_boxberry_length_class_id'), $product_query->row['length_class_id']);
+}
+$length = $product_query->row['length'];
+if ($length <= 0) {
+	$length = $this->length->convert($this->config->get('shipping_boxberry_depth'), $this->config->get('shipping_boxberry_length_class_id'), $product_query->row['length_class_id']);
+}
+            ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/view/theme/*/template/checkout/shipping_method.twig">
+        <operation>
+            <search><![CDATA[{{ quote.title }}]]></search>
+            <add position="after"><![CDATA[
+            {% if quote.boxberry_description is defined %}
+            <br>{{ quote.boxberry_description }}
+            {% endif %}
+            ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/view/theme/*/template/checkout/simplecheckout_shipping.twig">
+        <operation>
+            <search index="1"><![CDATA[quote['title']]]></search>
+            <add position="after"><![CDATA[
+            {% if quote.boxberry_description is defined %}
+            <br>{{ quote.boxberry_description }}
+            {% endif %}
+            ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/view/theme/*/template/checkout/{shipping_method,onepcheckoutshipping_method}.tpl">
+        <operation>
+            <search><![CDATA[$quote['title']]]></search>
+            <add position="after"><![CDATA[
+            <?php if (isset($quote['boxberry_description'])) : ?>
+            <br><?php echo $quote['boxberry_description'] ?>
+            <?php endif; ?>
+            ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/view/theme/*/template/checkout/simplecheckout_shipping.tpl">
+        <operation>
+            <search index="1"><![CDATA[quote['title']]]></search>
+            <add position="after"><![CDATA[
+            <?php if (isset($quote['boxberry_description'])) : ?>
+            <br><?php echo $quote['boxberry_description'] ?>
+            <?php endif; ?>
+            ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/view/theme/*/template/checkout/fastorder/fastorder.tpl">
+        <operation>
+            <search><![CDATA[$quote['title']]]></search>
+            <add position="after"><![CDATA[
+            <?php if (isset($quote['boxberry_description'])) { ?>
+            <br><?php echo $quote['boxberry_description']; ?>
+            <?php } ?>
+            ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/view/theme/*/template/checkout/onepcheckout.tpl">
+        <operation>
+            <search><![CDATA[$('[name="' + i + '"]').attr('placeholder',json['error'][i]);]]></search>
+            <add position="before"><![CDATA[
+            if(i == 'warning') {continue;}
+            ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/language/*/checkout/simplecheckout.php">
+        <operation>
+            <search><![CDATA[
+            <?php
+            ]]></search>
+            <add position="after">
+                <![CDATA[$_['error_boxberry_issue_point'] = 'Выберите пункт выдачи Boxberry'; ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/language/*/checkout/checkout.php">
+        <operation>
+            <search><![CDATA[
+            <?php
+            ]]></search>
+            <add position="after">
+                <![CDATA[$_['error_boxberry_issue_point'] = 'Выберите пункт выдачи Boxberry'; ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/language/*/checkout/fastorder.php">
+        <operation>
+            <search><![CDATA[
+            <?php
+            ]]></search>
+            <add position="after">
+                <![CDATA[$_['error_boxberry_issue_point'] = 'Выберите пункт выдачи Boxberry'; ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/controller/api/order.php">
+        <operation>
+            <search index="1"><![CDATA[ $json['error'] = $this->language->get('error_stock'); ]]></search>
+            <add position="replace"><![CDATA[ // $json['error'] = $this->language->get('error_stock'); ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/controller/api/cart.php">
+        <operation>
+            <search><![CDATA[ $json['error']['stock'] = $this->language->get('error_stock'); ]]></search>
+            <add position="replace"><![CDATA[ // $json['error']['stock'] = $this->language->get('error_stock'); ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/controller/checkout/onepcheckout.php">
+        <operation>
+            <search><![CDATA[
+            if (empty($shipping_address))
+            ]]></search>
+            <add position="before"><![CDATA[
+            $shipping_address = $shipping_address ?:($this->session->data['shipping_address']['address_1']?:'');
+            ]]></add>
+        </operation>
+        <operation>
+            <search index="0"><![CDATA[$shipping = explode('.', $this->request->post['shipping_method']);]]></search>
+            <add position="after"><![CDATA[
+                if ($shipping[0] == 'boxberry' && $shipping[1] == 'pickup') {
+                    if (isset($this->session->data['boxberry_shipping_fail_cost_issue_point'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_issue_point'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && $shipping[1] == 'pickup_prepaid') {
+                    if (isset($this->session->data['boxberry_shipping_fail_cost_issue_point_prepaid'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_issue_point_prepaid'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && ($shipping[1] == 'pickup_prepaid' || $shipping[1] == 'pickup')) {
+                    if ($shipping[1] == 'pickup') {
+                        if (!isset($this->session->data['boxberry_shipping_issue_point_id']) || !$this->session->data['boxberry_shipping_issue_point_id']) {
+                            $json['error']['warning'] = $this->language->get('error_boxberry_issue_point');
+                        }
+                    }
+                    if ($shipping[1] == 'pickup_prepaid') {
+                        if (!isset($this->session->data['boxberry_shipping_issue_point_id_prepaid'])||!$this->session->data['boxberry_shipping_issue_point_id_prepaid']) {
+                            $json['error']['warning'] = $this->language->get('error_boxberry_issue_point');
+                        }
+                    }
+                    if (isset($this->session->data['boxberry_shipping_fail_city'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_city'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && $shipping[1] == 'courier_delivery') {
+                    if (isset($this->session->data['boxberry_shipping_fail_cost_courier_delivery'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_courier_delivery'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && $shipping[1] == 'courier_delivery_prepaid') {
+                    if (isset($this->session->data['boxberry_shipping_fail_cost_courier_delivery'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_courier_delivery_prepaid'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && ($shipping[1] == 'courier_delivery_prepaid' || $shipping[1] == 'courier_delivery')) {
+                    if (isset($this->session->data['boxberry_shipping_fail_zip'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_zip'];
+                    }
+                }
+
+                if (($shipping[0] == 'boxberry') && ($shipping[1] == 'courier_delivery' || $shipping[1] == 'pickup' || $shipping[1] == 'courier_delivery_prepaid' || $shipping[1] == 'pickup_prepaid')) {
+                    if (isset($this->session->data['boxberry_shipping_fail_size'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_size'];
+                    }
+                    if (isset($this->session->data['boxberry_shipping_fail_weight'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_weight'];
+                    }
+                }
+            ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/controller/checkout/shipping_method.php">
+        <operation>
+            <search><![CDATA[$this->session->data['comment'] = strip_tags($this->request->post['comment']);]]></search>
+            <add position="after"><![CDATA[
+                if ($shipping[0] == 'boxberry' && $shipping[1] == 'pickup') {
+                    if (isset($this->session->data['boxberry_shipping_fail_cost_issue_point'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_issue_point'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && $shipping[1] == 'pickup_prepaid') {
+                    if (isset($this->session->data['boxberry_shipping_fail_cost_issue_point_prepaid'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_issue_point_prepaid'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && ($shipping[1] == 'pickup_prepaid' || $shipping[1] == 'pickup')) {
+                    if ($shipping[1] == 'pickup') {
+                        if (!isset($this->session->data['boxberry_shipping_issue_point_id']) || !$this->session->data['boxberry_shipping_issue_point_id']) {
+                            $json['error']['warning'] = $this->language->get('error_boxberry_issue_point');
+                        }
+                    }
+                    if ($shipping[1] == 'pickup_prepaid') {
+                        if (!isset($this->session->data['boxberry_shipping_issue_point_id_prepaid'])||!$this->session->data['boxberry_shipping_issue_point_id_prepaid']) {
+                            $json['error']['warning'] = $this->language->get('error_boxberry_issue_point');
+                        }
+                    }
+                    if (isset($this->session->data['boxberry_shipping_fail_city'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_city'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && $shipping[1] == 'courier_delivery') {
+                    if (isset($this->session->data['boxberry_shipping_fail_cost_courier_delivery'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_courier_delivery'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && $shipping[1] == 'courier_delivery_prepaid') {
+                    if (isset($this->session->data['boxberry_shipping_fail_cost_courier_delivery'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_courier_delivery_prepaid'];
+                    }
+                }
+
+                if ($shipping[0] == 'boxberry' && ($shipping[1] == 'courier_delivery_prepaid' || $shipping[1] == 'courier_delivery')) {
+                    if (isset($this->session->data['boxberry_shipping_fail_zip'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_zip'];
+                    }
+                }
+
+                if (($shipping[0] == 'boxberry') && ($shipping[1] == 'courier_delivery' || $shipping[1] == 'pickup' || $shipping[1] == 'courier_delivery_prepaid' || $shipping[1] == 'pickup_prepaid')) {
+                    if (isset($this->session->data['boxberry_shipping_fail_size'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_size'];
+                    }
+                    if (isset($this->session->data['boxberry_shipping_fail_weight'])) {
+                        $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_weight'];
+                    }
+                }
+            ]]></add>
+        </operation>
+    </file>
+    <file path="catalog/controller/checkout/simplecheckout_shipping.php">
+        <operation>
+            <search><![CDATA[private function validator($shippingMethod) {]]></search>
+            <add position="after"><![CDATA[
+            $bxbShippingMethod = explode('.', $shippingMethod);
+
+            if (($bxbShippingMethod[0] == 'boxberry') && ($bxbShippingMethod[1] == 'courier_delivery' || $bxbShippingMethod[1] == 'pickup' || $bxbShippingMethod[1] == 'courier_delivery_prepaid' || $bxbShippingMethod[1] == 'pickup_prepaid')) {
+                if (isset($this->session->data['boxberry_shipping_fail_size'])) {
+                    return $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_size'];
+                }
+                if (isset($this->session->data['boxberry_shipping_fail_weight'])) {
+                    return $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_weight'];
+                }
+            }
+
+            if ($bxbShippingMethod[0] == 'boxberry' && $bxbShippingMethod[1] == 'courier_delivery') {
+                if (isset($this->session->data['boxberry_shipping_fail_cost_courier_delivery'])) {
+                    return $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_courier_delivery'];
+                }
+            }
+
+            if ($bxbShippingMethod[0] == 'boxberry' && $bxbShippingMethod[1] == 'courier_delivery_prepaid') {
+                if (isset($this->session->data['boxberry_shipping_fail_cost_courier_delivery_prepaid'])) {
+                    return $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_cost_courier_delivery_prepaid'];
+                }
+            }
+
+            if ($bxbShippingMethod[0] == 'boxberry' && ($bxbShippingMethod[1] == 'courier_delivery_prepaid' || $bxbShippingMethod[1] == 'courier_delivery')) {
+                if (isset($this->session->data['boxberry_shipping_fail_zip'])) {
+                    return $json['error']['warning'] = $this->session->data['boxberry_shipping_fail_zip'];
+                }
+            }
+            ]]></add>
+        </operation>
+    </file>
+</modification>
